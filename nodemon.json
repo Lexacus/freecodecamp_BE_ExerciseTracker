@@ -1,0 +1,5 @@
+{
+  "watch": ["./index.ts"],
+  "ext": "ts",
+  "pollingInterval": 1000
+}
