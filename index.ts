@@ -1,8 +1,9 @@
-import dotenv from "dotenv";
 import cors from "cors";
-import express, { Request, Response, Express } from "express";
+import dayjs from "dayjs";
+import dotenv from "dotenv";
+import express, { Express, Request, Response } from "express";
 import mongoose, { Schema, model } from "mongoose";
-import { isValidUrl } from "./utils";
+import { LogsFilters } from "./types";
 
 dotenv.config();
 const app: Express = express();
@@ -77,11 +78,12 @@ app.post("/api/users/:_id/exercises", async (req: Request, res: Response) => {
     ...exerciseOwner,
     ...req.body,
     ownerId: exerciseOwner.id,
-    date: parsedDate.toDateString(),
+    date: parsedDate.toISOString(),
   });
-  const { _id, ownerId, ...rest } = createdExercise.toObject();
+  const { _id, ownerId, date, ...rest } = createdExercise.toObject();
   return res.json({
     ...exerciseOwner.toObject(),
+    date: parsedDate.toDateString(),
     ...rest,
   });
 });
@@ -91,15 +93,48 @@ app.get("/api/users/:_id/logs", async (req: Request, res: Response) => {
   if (!user) {
     return res.json({ error: "No user found with provided id." });
   }
-  const userExercises = await Exercise.find({ ownerId: user.id });
+
+  // query filters
+  const filters: LogsFilters = {
+    ownerId: user.id,
+  };
+
+  // add from filter if present
+  if (req.query.from) {
+    filters.date = {
+      ...filters.date,
+      $gte: dayjs(req.query.from as string).format(),
+    };
+  }
+
+  // add to filter if present
+  if (req.query.to) {
+    filters.date = {
+      ...filters.date,
+      $lte: dayjs(req.query.to as string).format(),
+    };
+  }
+
+  const userExercisesQuery = Exercise.find(filters);
+
+  if (req.query.limit) {
+    userExercisesQuery.limit(parseInt(req.query.limit as string));
+  }
+
+  const [userExercisesCount, userExercises] = await Promise.all([
+    Exercise.countDocuments({ ownerId: user.id }),
+    userExercisesQuery,
+  ]);
+
   const userLog = userExercises.map(({ description, duration, date }) => ({
     description,
     duration,
-    date,
+    date: (date ? new Date(date) : new Date()).toDateString(),
   }));
+
   return res.json({
     ...user.toObject(),
-    count: userExercises.length,
+    count: userExercisesCount,
     log: userLog,
   });
 });
